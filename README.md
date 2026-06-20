@@ -1,8 +1,18 @@
 # USA States Quiz
 
-A native SwiftUI iOS quiz app for learning all 50 USA states. Each game shuffles the 50 states, highlights one state on the map per round, and asks the player to spell the state name using letter tiles.
+A native SwiftUI iOS map quiz app. The first screen lets players choose a quiz mode:
+
+- USA States
+- Brazil States
+- South America Countries
+- Central America Countries
+- Europe Countries
+
+Each game shuffles the selected map set, highlights one state or country per round, and asks the player to spell the answer using letter tiles.
 
 Correct letters fill the next slot. Wrong letters are not accepted; the current answer slot and tapped key flash red instead.
+
+Maps are bundled as local GeoJSON resources, so the quiz works offline.
 
 ## Run
 

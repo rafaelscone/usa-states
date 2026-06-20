@@ -5,6 +5,24 @@ struct ContentView: View {
     @StateObject private var game = StateQuizViewModel()
 
     var body: some View {
+        ZStack {
+            AppBackground()
+
+            if game.selectedMode == nil {
+                QuizModeMenuView { mode in
+                    game.start(mode: mode)
+                }
+            } else {
+                QuizGameView(game: game)
+            }
+        }
+    }
+}
+
+struct QuizGameView: View {
+    @ObservedObject var game: StateQuizViewModel
+
+    var body: some View {
         GeometryReader { proxy in
             let safeTop = proxy.safeAreaInsets.top
             let safeBottom = proxy.safeAreaInsets.bottom
@@ -13,18 +31,22 @@ struct ContentView: View {
             let mapHeight = min(360, max(250, height * 0.36))
 
             ZStack {
-                AppBackground()
-
                 VStack(spacing: 14) {
                     TopBarView(
+                        title: game.modeTitle,
                         roundText: game.roundText,
                         score: game.score,
                         mistakes: game.mistakes,
                         progress: game.progress,
-                        onRestart: game.restart
+                        onRestart: game.restart,
+                        onMenu: game.returnToMenu
                     )
 
-                    ZoomableStateMapView(states: game.mapStates, highlightedState: game.currentState?.name)
+                    ZoomableStateMapView(
+                        states: game.mapStates,
+                        highlightedState: game.currentState?.name,
+                        usesUSAInsets: game.usesUSAInsets
+                    )
                         .frame(height: mapHeight)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .overlay(
@@ -34,7 +56,7 @@ struct ContentView: View {
                         .shadow(color: .black.opacity(0.35), radius: 16, y: 10)
 
                     VStack(spacing: 12) {
-                        Text(game.isComplete ? "All states completed" : "Name the highlighted state")
+                        Text(game.isComplete ? "Round complete" : game.prompt)
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.82))
 
@@ -71,7 +93,7 @@ struct ContentView: View {
                     .padding(.top, 2)
 
                     if game.isComplete {
-                        CompletionView(score: game.score, mistakes: game.mistakes, onRestart: game.restart)
+                        CompletionView(total: game.totalRounds, score: game.score, mistakes: game.mistakes, onRestart: game.restart)
                     }
 
                     Spacer(minLength: 0)
@@ -82,9 +104,88 @@ struct ContentView: View {
                 .frame(width: width, height: height, alignment: .top)
             }
         }
-        .onAppear {
-            game.load()
+    }
+}
+
+struct QuizModeMenuView: View {
+    let onSelect: (QuizMode) -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Map Quiz")
+                            .font(.system(size: 44, weight: .black))
+                            .foregroundStyle(.white)
+                        Text("Choose a region, find the highlighted shape, and spell the answer one letter at a time.")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.68))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, max(24, proxy.safeAreaInsets.top + 12))
+
+                    VStack(spacing: 12) {
+                        ForEach(QuizMode.allCases) { mode in
+                            Button {
+                                onSelect(mode)
+                            } label: {
+                                QuizModeCard(mode: mode)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Text("Pinch and drag the map during the quiz to inspect small states and countries.")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.45))
+                        .padding(.bottom, max(24, proxy.safeAreaInsets.bottom + 16))
+                }
+                .padding(.horizontal, 18)
+                .frame(minHeight: proxy.size.height, alignment: .top)
+            }
         }
+    }
+}
+
+struct QuizModeCard: View {
+    let mode: QuizMode
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: mode.systemImage)
+                .font(.system(size: 24, weight: .black))
+                .foregroundStyle(mode.accentColor)
+                .frame(width: 52, height: 52)
+                .background(mode.accentColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(mode.title)
+                    .font(.system(size: 19, weight: .black))
+                    .foregroundStyle(.white)
+                Text(mode.subtitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.62))
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 3) {
+                Text("\(mode.roundCount)")
+                    .font(.system(size: 22, weight: .black))
+                    .foregroundStyle(.white)
+                Text("rounds")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .black))
+                .foregroundStyle(.white.opacity(0.42))
+        }
+        .padding(14)
+        .background(.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(.white.opacity(0.13), lineWidth: 1))
     }
 }
 
@@ -104,22 +205,36 @@ struct AppBackground: View {
 }
 
 struct TopBarView: View {
+    let title: String
     let roundText: String
     let score: Int
     let mistakes: Int
     let progress: Double
     let onRestart: () -> Void
+    let onMenu: () -> Void
 
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
+                Button(action: onMenu) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .black))
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 42)
+                        .background(.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(.white.opacity(0.14), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
                 VStack(alignment: .leading, spacing: 3) {
                     Text(roundText)
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(.cyan.opacity(0.9))
-                    Text("USA States")
-                        .font(.system(size: 30, weight: .black))
+                    Text(title)
+                        .font(.system(size: 28, weight: .black))
                         .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
                 }
 
                 Spacer()
@@ -174,12 +289,15 @@ struct AnswerSlotsView: View {
         GeometryReader { proxy in
             let letters = answerLetters
             let slotCount = letters.count
+            let rowCount = slotCount > 14 ? 2 : 1
+            let columnCount = Int(ceil(Double(slotCount) / Double(rowCount)))
             let spacing: CGFloat = 6
-            let available = proxy.size.width - CGFloat(max(slotCount - 1, 0)) * spacing
-            let slotWidth = min(42, max(18, available / CGFloat(max(slotCount, 1))))
+            let available = proxy.size.width - CGFloat(max(columnCount - 1, 0)) * spacing
+            let slotWidth = min(42, max(20, available / CGFloat(max(columnCount, 1))))
             let slotHeight = max(40, slotWidth * 1.18)
+            let columns = Array(repeating: GridItem(.fixed(slotWidth), spacing: spacing), count: max(columnCount, 1))
 
-            HStack(spacing: spacing) {
+            LazyVGrid(columns: columns, spacing: spacing) {
                 ForEach(letters.indices, id: \.self) { index in
                     Text(letterForSlot(at: index))
                         .font(.system(size: min(27, slotWidth * 0.64), weight: .black))
@@ -196,11 +314,15 @@ struct AnswerSlotsView: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .frame(height: 48)
+        .frame(height: answerLetters.count > 14 ? 94 : 48)
     }
 
     private var answerLetters: [String] {
-        answer.uppercased().filter { $0.isLetter }.map(String.init)
+        answer
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .uppercased()
+            .filter { $0.isLetter }
+            .map(String.init)
     }
 
     private func letterForSlot(at index: Int) -> String {
@@ -305,13 +427,14 @@ struct ActionButton: View {
 }
 
 struct CompletionView: View {
+    let total: Int
     let score: Int
     let mistakes: Int
     let onRestart: () -> Void
 
     var body: some View {
         VStack(spacing: 8) {
-            Text("Final score \(score)/50")
+            Text("Final score \(score)/\(total)")
                 .font(.system(size: 22, weight: .black))
             Text("\(mistakes) wrong taps")
                 .font(.system(size: 14, weight: .semibold))
@@ -333,6 +456,7 @@ struct CompletionView: View {
 struct ZoomableStateMapView: View {
     let states: [USStateShape]
     let highlightedState: String?
+    let usesUSAInsets: Bool
 
     @State private var scale: CGFloat = 1
     @State private var steadyScale: CGFloat = 1
@@ -345,7 +469,7 @@ struct ZoomableStateMapView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topTrailing) {
-                StateMapView(states: states, highlightedState: highlightedState)
+                StateMapView(states: states, highlightedState: highlightedState, usesUSAInsets: usesUSAInsets)
                     .scaleEffect(scale)
                     .offset(offset)
                     .frame(width: proxy.size.width, height: proxy.size.height)
@@ -384,7 +508,7 @@ struct ZoomableStateMapView: View {
             }
             .clipped()
         }
-        .accessibilityLabel("Zoomable map of the United States")
+        .accessibilityLabel("Zoomable quiz map")
     }
 
     private func mapGestures(in size: CGSize) -> some Gesture {
@@ -479,15 +603,20 @@ struct MapZoomControls: View {
 struct StateMapView: View {
     let states: [USStateShape]
     let highlightedState: String?
+    let usesUSAInsets: Bool
 
     var body: some View {
         GeometryReader { proxy in
             Canvas { context, size in
                 context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(red: 0.61, green: 0.83, blue: 0.88)))
 
-                drawMainland(in: &context, size: size)
-                drawInset(named: "Alaska", label: "AK", in: &context, size: size, rect: alaskaRect(size))
-                drawInset(named: "Hawaii", label: "HI", in: &context, size: size, rect: hawaiiRect(size))
+                if usesUSAInsets {
+                    drawMainland(in: &context, size: size)
+                    drawInset(named: "Alaska", label: "AK", in: &context, size: size, rect: alaskaRect(size))
+                    drawInset(named: "Hawaii", label: "HI", in: &context, size: size, rect: hawaiiRect(size))
+                } else {
+                    drawAll(in: &context, size: size)
+                }
             }
         }
     }
@@ -499,6 +628,11 @@ struct StateMapView: View {
     private func drawMainland(in context: inout GraphicsContext, size: CGSize) {
         let projection = GeoProjection(bounds: GeoProjection.bounds(for: mainlandStates), canvasSize: size, padding: 14)
         draw(states: mainlandStates, projection: projection, in: &context)
+    }
+
+    private func drawAll(in context: inout GraphicsContext, size: CGSize) {
+        let projection = GeoProjection(bounds: GeoProjection.bounds(for: states), canvasSize: size, padding: 18)
+        draw(states: states, projection: projection, in: &context)
     }
 
     private func drawInset(named name: String, label: String, in context: inout GraphicsContext, size: CGSize, rect: CGRect) {
@@ -545,8 +679,90 @@ struct StateMapView: View {
     }
 }
 
+enum QuizMode: String, CaseIterable, Identifiable {
+    case usaStates
+    case brazilStates
+    case southAmericaCountries
+    case centralAmericaCountries
+    case europeCountries
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .usaStates: return "USA States"
+        case .brazilStates: return "Brazil States"
+        case .southAmericaCountries: return "South America"
+        case .centralAmericaCountries: return "Central America"
+        case .europeCountries: return "Europe"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .usaStates: return "All 50 United States"
+        case .brazilStates: return "Brazil's 26 states and Federal District"
+        case .southAmericaCountries: return "Sovereign countries in South America"
+        case .centralAmericaCountries: return "Countries from Belize to Panama"
+        case .europeCountries: return "European countries on the map"
+        }
+    }
+
+    var prompt: String {
+        switch self {
+        case .usaStates, .brazilStates: return "Name the highlighted state"
+        case .southAmericaCountries, .centralAmericaCountries, .europeCountries: return "Name the highlighted country"
+        }
+    }
+
+    var resourceName: String {
+        switch self {
+        case .usaStates: return "us-states"
+        case .brazilStates: return "brazil-states"
+        case .southAmericaCountries: return "south-america-countries"
+        case .centralAmericaCountries: return "central-america-countries"
+        case .europeCountries: return "europe-countries"
+        }
+    }
+
+    var roundCount: Int {
+        switch self {
+        case .usaStates: return 50
+        case .brazilStates: return 27
+        case .southAmericaCountries: return 12
+        case .centralAmericaCountries: return 7
+        case .europeCountries: return 44
+        }
+    }
+
+    var usesUSAInsets: Bool {
+        self == .usaStates
+    }
+
+    var systemImage: String {
+        switch self {
+        case .usaStates: return "flag.fill"
+        case .brazilStates: return "diamond.fill"
+        case .southAmericaCountries: return "globe.americas.fill"
+        case .centralAmericaCountries: return "map.fill"
+        case .europeCountries: return "globe.europe.africa.fill"
+        }
+    }
+
+    var accentColor: Color {
+        switch self {
+        case .usaStates: return .cyan
+        case .brazilStates: return .green
+        case .southAmericaCountries: return .orange
+        case .centralAmericaCountries: return .mint
+        case .europeCountries: return .purple
+        }
+    }
+}
+
 @MainActor
 final class StateQuizViewModel: ObservableObject {
+    @Published var selectedMode: QuizMode?
     @Published var mapStates: [USStateShape] = []
     @Published var questions: [USStateShape] = []
     @Published var currentIndex = 0
@@ -559,8 +775,24 @@ final class StateQuizViewModel: ObservableObject {
     @Published var mistakes = 0
     @Published var isComplete = false
 
-    private let excludedShapes = Set(["Puerto Rico", "District of Columbia"])
+    private let usaExcludedShapes = Set(["Puerto Rico", "District of Columbia"])
     private let fillerLetters = Array("ETAOINSHRDLUCMFGYPWBVKXJQZ").map(String.init)
+
+    var modeTitle: String {
+        selectedMode?.title ?? "Map Quiz"
+    }
+
+    var prompt: String {
+        selectedMode?.prompt ?? "Name the highlighted place"
+    }
+
+    var usesUSAInsets: Bool {
+        selectedMode?.usesUSAInsets ?? false
+    }
+
+    var totalRounds: Int {
+        questions.count
+    }
 
     var currentState: USStateShape? {
         guard !isComplete, questions.indices.contains(currentIndex) else { return nil }
@@ -574,18 +806,34 @@ final class StateQuizViewModel: ObservableObject {
 
     var roundText: String {
         guard !questions.isEmpty else { return "Loading" }
-        if isComplete { return "Round 50 of 50" }
+        if isComplete { return "Round \(questions.count) of \(questions.count)" }
         return "Round \(currentIndex + 1) of \(questions.count)"
     }
 
-    func load() {
-        guard mapStates.isEmpty else { return }
-        let decoded = USStateShape.loadBundledStates()
-            .filter { !excludedShapes.contains($0.name) }
+    func start(mode: QuizMode) {
+        selectedMode = mode
+        let decoded = USStateShape.loadBundledShapes(resourceName: mode.resourceName)
+            .filter { mode == .usaStates ? !usaExcludedShapes.contains($0.name) : true }
             .sorted { $0.name < $1.name }
         mapStates = decoded
         questions = decoded.shuffled()
+        score = 0
+        mistakes = 0
+        currentIndex = 0
+        isComplete = false
         prepareQuestion()
+    }
+
+    func returnToMenu() {
+        selectedMode = nil
+        mapStates.removeAll()
+        questions.removeAll()
+        typedLetters.removeAll()
+        keyboardLetters.removeAll()
+        usedKeyboardIndices.removeAll()
+        wrongSlotIndex = nil
+        wrongKeyboardIndex = nil
+        isComplete = false
     }
 
     func pickLetter(at index: Int) {
@@ -632,6 +880,7 @@ final class StateQuizViewModel: ObservableObject {
     }
 
     func restart() {
+        guard selectedMode != nil else { return }
         score = 0
         mistakes = 0
         currentIndex = 0
@@ -641,7 +890,7 @@ final class StateQuizViewModel: ObservableObject {
     }
 
     private var normalizedAnswer: String {
-        currentState?.name.uppercased().filter { $0.isLetter }.map(String.init).joined() ?? ""
+        normalizedLetters(from: currentState?.name ?? "")
     }
 
     private var expectedLetter: String {
@@ -681,6 +930,15 @@ final class StateQuizViewModel: ObservableObject {
             }
         }
         keyboardLetters = letters.shuffled()
+    }
+
+    private func normalizedLetters(from text: String) -> String {
+        text
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .uppercased()
+            .filter { $0.isLetter }
+            .map(String.init)
+            .joined()
     }
 }
 
@@ -768,8 +1026,8 @@ struct USStateShape: Identifiable {
     let name: String
     let polygons: [[[GeoCoordinate]]]
 
-    static func loadBundledStates() -> [USStateShape] {
-        guard let url = Bundle.main.url(forResource: "us-states", withExtension: "json"),
+    static func loadBundledShapes(resourceName: String) -> [USStateShape] {
+        guard let url = Bundle.main.url(forResource: resourceName, withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let featureCollection = try? JSONDecoder().decode(GeoJSONFeatureCollection.self, from: data) else {
             return []
