@@ -661,13 +661,39 @@ struct StateMapView: View {
 
                 let isHighlighted = state.name == highlightedState
                 if isHighlighted {
-                    context.stroke(path, with: .color(Color(red: 1, green: 0.95, blue: 0.25).opacity(0.85)), lineWidth: 5)
+                    context.fill(path, with: .color(Color(red: 1, green: 0.12, blue: 0.18)))
+                    context.stroke(path, with: .color(.white.opacity(0.98)), lineWidth: 2.4)
+                    drawSmallHighlightTarget(for: path, in: &context)
+                } else {
+                    context.fill(path, with: .color(.white))
+                    context.stroke(path, with: .color(Color(white: 0.72)), lineWidth: 0.9)
                 }
-
-                context.fill(path, with: .color(isHighlighted ? Color(red: 1, green: 0.20, blue: 0.24) : .white))
-                context.stroke(path, with: .color(isHighlighted ? .white.opacity(0.98) : Color(white: 0.72)), lineWidth: isHighlighted ? 2.1 : 0.9)
             }
         }
+    }
+
+    private func drawSmallHighlightTarget(for path: Path, in context: inout GraphicsContext) {
+        let rect = path.boundingRect
+        guard rect.width < 18 || rect.height < 18 else { return }
+
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = max(8, min(15, max(rect.width, rect.height) + 5))
+        let outer = Path(ellipseIn: CGRect(
+            x: center.x - radius,
+            y: center.y - radius,
+            width: radius * 2,
+            height: radius * 2
+        ))
+        let inner = Path(ellipseIn: CGRect(
+            x: center.x - 2.5,
+            y: center.y - 2.5,
+            width: 5,
+            height: 5
+        ))
+
+        context.stroke(outer, with: .color(.white.opacity(0.95)), lineWidth: 3)
+        context.stroke(outer, with: .color(Color(red: 1, green: 0.12, blue: 0.18)), lineWidth: 1.5)
+        context.fill(inner, with: .color(Color(red: 1, green: 0.12, blue: 0.18)))
     }
 
     private func alaskaRect(_ size: CGSize) -> CGRect {
